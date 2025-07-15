@@ -415,6 +415,7 @@ class Diffusion(nn.Module):
             torch.zeros_like(next_noise_level),
             self.ddim_sampling_eta * ((1 - alpha / alpha_next) * (1 - alpha_next) / (1 - alpha)).sqrt(),
         )
+        # see eq 53 in DDIM
         c = (1 - alpha_next - sigma**2).sqrt()
 
         alpha_next = self.add_shape_channels(alpha_next)
