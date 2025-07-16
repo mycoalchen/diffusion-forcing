@@ -28,7 +28,7 @@ class RectifiedFlow(nn.Module):
         self.sampling_timesteps = cfg.sampling_timesteps
         self.clip_noise = cfg.clip_noise
         self.arch = cfg.architecture
-        self.stabilization_level = stabilization_level
+        self.stabilization_level = cfg.stabilization_level
         self.is_causal = is_causal
         # NOTE: should guidance_scale be a hyperparameter?
         self.guidance_scale = cfg.guidance_scale
