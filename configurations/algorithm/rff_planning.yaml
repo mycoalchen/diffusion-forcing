@@ -1,5 +1,5 @@
 defaults:
-  - rf_base
+  - rff_base
 
 # dataset info
 data_mean: null
