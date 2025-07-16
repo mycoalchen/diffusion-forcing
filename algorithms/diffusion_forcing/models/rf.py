@@ -34,12 +34,11 @@ class RectifiedFlow(nn.Module):
         self.guidance_scale = cfg.guidance_scale
 
         self._build_model()
-        self._build_buffer()
 
     def _build_model(self):
         x_channel = self.x_shape[0]
         # no video support yet
-        assert len(self.x_shape == 1)
+        assert len(self.x_shape) == 1
         self.model = Transformer(
             x_dim=x_channel,
                 external_cond_dim=self.external_cond_dim,
@@ -67,7 +66,7 @@ class RectifiedFlow(nn.Module):
         external_cond: Optional[torch.Tensor],
         noise_levels: torch.Tensor,
     ):
-        scaled_noise_levels = noise_levels.float() / self.timesteps
+        scaled_noise_levels = (noise_levels.float() / self.timesteps).unsqueeze(-1)
 
         noise = torch.randn_like(x)
         noise = torch.clamp(noise, -self.clip_noise, self.clip_noise)
@@ -93,8 +92,8 @@ class RectifiedFlow(nn.Module):
         guidance_fn: Optional[Callable] = None,
     ):
         # NOTE: diffusion.py re-scales from [0, sampling_timesteps] to [-1, timesteps), so 0-noise (certain frame) becomes stabilization_level - 1. Here we instead re-scale from [0, sampling_timesteps] to [0, 1) and replace 0-noise with (stabilization_level - 1) / timesteps.
-        scaled_curr_noise_level = curr_noise_level / (self.sampling_timesteps + 1)
-        scaled_next_noise_level = next_noise_level / (self.sampling_timesteps + 1)
+        scaled_curr_noise_level = (curr_noise_level / (self.sampling_timesteps + 1)).unsqueeze(-1)
+        scaled_next_noise_level = (next_noise_level / (self.sampling_timesteps + 1)).unsqueeze(-1)
         clipped_curr_noise_level = torch.where(
             scaled_curr_noise_level == 0,
             torch.full_like(scaled_curr_noise_level, (self.stabilization_level - 1) / self.timesteps),
