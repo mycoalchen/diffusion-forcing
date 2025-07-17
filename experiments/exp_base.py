@@ -185,6 +185,7 @@ class BaseLightningExperiment(BaseExperiment):
             strategy=DDPStrategy(find_unused_parameters=False) if torch.cuda.device_count() > 1 else "auto",
             callbacks=callbacks,
             gradient_clip_val=self.cfg.training.optim.gradient_clip_val,
+            limit_train_batches=self.cfg.training.limit_batch,
             val_check_interval=self.cfg.validation.val_every_n_step,
             limit_val_batches=self.cfg.validation.limit_batch,
             check_val_every_n_epoch=self.cfg.validation.val_every_n_epoch,

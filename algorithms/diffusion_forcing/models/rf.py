@@ -108,7 +108,7 @@ class RectifiedFlow(nn.Module):
             clipped_curr_noise_level,
             noise=torch.zeros_like(x)
         )
-        x = torch.where(self.add_shape_channels(scaled_curr_noise_level == 0), scaled_context, orig_x)
+        x = torch.where(scaled_curr_noise_level == 0, scaled_context, orig_x)
 
         # NOTE: Following Esser et al. (https://arxiv.org/pdf/2403.03206), use Euler step to get x_pred from v_pred
         v_pred = self.model(x, clipped_curr_noise_level, external_cond, self.is_causal)
@@ -119,13 +119,13 @@ class RectifiedFlow(nn.Module):
                 grad = torch.autograd.grad(score, x_in)[0]
             v_pred = v_pred + self.guidance_scale * grad
         # this calculation messes up all frames where noise was 0, but that doesn't matter because we mask those out in the next block anyway
-        dt = (clipped_curr_noise_level - next_noise_level).view([-1] + [1]*(x.ndim-1))
+        dt = clipped_curr_noise_level - scaled_next_noise_level
         x_next = x - dt * v_pred
-                
+
         # only update frames where the noise level decreases
-        mask = scaled_curr_noise_level == next_noise_level
+        mask = scaled_curr_noise_level == scaled_next_noise_level
         x_next = torch.where(
-            self.add_shape_channels(mask),
+            mask,
             orig_x,
             x_next,
         )
