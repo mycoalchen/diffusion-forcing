@@ -16,19 +16,19 @@ resume: null # wandb run id to resume logging and loading checkpoint from
 load: null # wanmdb run id containing checkpoint or a path to a checkpoint file
 
 # FOR SHAPE DEBUGGING
-experiment:
+# experiment:
   # training:
     # max_epochs: 2
     # limit_batch: 1
-  validation:
+  # validation:
     # batch_size: 2
     # limit_batch: 1
-    val_every_n_epoch: 4
+    # val_every_n_epoch: 5
 # algorithm:
-  # warmup_steps: 0
-  # rf:
-  #   architecture:
-  #     network_size: 16
-  #     num_layers: 3
-  #     attn_heads: 2
-  #     dim_feedforward: 32
+#   warmup_steps: 0
+#   rf:
+#     architecture:
+#       network_size: 16
+#       num_layers: 3
+#       attn_heads: 2
+#       dim_feedforward: 32

@@ -5,6 +5,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 from einops import rearrange
+import math
 from .unet3d import Unet3D
 from .transformer import Transformer
 from .utils import linear_beta_schedule, cosine_beta_schedule, sigmoid_beta_schedule, extract, EinopsWrapper
@@ -59,6 +60,20 @@ class RectifiedFlow(nn.Module):
         
         return (1 - t) * x_start + t * noise
 
+    # NOTE: SRFT (https://arxiv.org/pdf/2403.03206) finds good results with lognorm(0, 1) sampling
+    # expects noise_levels in [0, 1)
+    def compute_loss_weights(self, noise_levels: torch.Tensor):
+        # TODO: move location m, scale s, and clamp bound to cfg
+        m = 0
+        s = 1
+        clamp_bound = 1e-5
+        t = noise_levels.clamp(clamp_bound, 1-clamp_bound)
+        logits = torch.log(t / (1 - t))
+        # coef = 1 / (s * math.sqrt(2 * math.pi) * (1 - t) ** 2)
+        coef = 1 / (s * math.sqrt(2 * math.pi) * t * (1 - t))
+        return coef * torch.exp(-0.5 * ((logits - m) / s) ** 2)
+        
+
     # expects noise_levels in [0, self.timesteps)
     def forward(
         self,
@@ -73,12 +88,14 @@ class RectifiedFlow(nn.Module):
 
         noised_x = self.z_sample(x_start=x, t=scaled_noise_levels, noise=noise)
         v_pred = self.model(noised_x, scaled_noise_levels, external_cond, self.is_causal)
-        x_pred = x - scaled_noise_levels * v_pred
+        x_pred = noised_x - scaled_noise_levels * v_pred
         
         v = noise - x
 
         # TODO: Add loss weighting
         loss = F.mse_loss(v_pred, v.detach(), reduction="none")
+        loss_weight = self.compute_loss_weights(scaled_noise_levels)
+        loss = loss * loss_weight
         
         return x_pred, loss
 
@@ -91,11 +108,13 @@ class RectifiedFlow(nn.Module):
         next_noise_level: torch.Tensor,
         guidance_fn: Optional[Callable] = None,
     ):
-        # NOTE: diffusion.py re-scales from [0, sampling_timesteps] to [-1, timesteps), so 0-noise (certain frame) becomes stabilization_level - 1. Here we instead re-scale from [0, sampling_timesteps] to [0, 1) and replace 0-noise with (stabilization_level - 1) / timesteps.
+        # NOTE: diffusion.py re-scales from [0, sampling_timesteps] to [-1, timesteps - 1] and maps -1 to stabilization_level - 1, so 0-noise frames end up with noise level stabilization_level - 1. Here we instead re-scale from [0, sampling_timesteps] to [0, 1) and replace 0-noise with (stabilization_level - 1) / timesteps.
         scaled_curr_noise_level = (curr_noise_level / (self.sampling_timesteps + 1)).unsqueeze(-1)
         scaled_next_noise_level = (next_noise_level / (self.sampling_timesteps + 1)).unsqueeze(-1)
+
+        curr_noise_0 = torch.isclose(scaled_curr_noise_level, torch.zeros_like(scaled_curr_noise_level))
         clipped_curr_noise_level = torch.where(
-            scaled_curr_noise_level == 0,
+            curr_noise_0,
             torch.full_like(scaled_curr_noise_level, (self.stabilization_level - 1) / self.timesteps),
             scaled_curr_noise_level,
         )
@@ -108,9 +127,9 @@ class RectifiedFlow(nn.Module):
             clipped_curr_noise_level,
             noise=torch.zeros_like(x)
         )
-        x = torch.where(scaled_curr_noise_level == 0, scaled_context, orig_x)
+        x = torch.where(curr_noise_0, scaled_context, orig_x)
 
-        # NOTE: Following Esser et al. (https://arxiv.org/pdf/2403.03206), use Euler step to get x_pred from v_pred
+        # NOTE: Following SRFT, use Euler step to get x_pred from v_pred
         v_pred = self.model(x, clipped_curr_noise_level, external_cond, self.is_causal)
         if guidance_fn is not None:
             with torch.enable_grad():
@@ -123,7 +142,7 @@ class RectifiedFlow(nn.Module):
         x_next = x - dt * v_pred
 
         # only update frames where the noise level decreases
-        mask = scaled_curr_noise_level == scaled_next_noise_level
+        mask = torch.isclose(scaled_curr_noise_level, scaled_next_noise_level)
         x_next = torch.where(
             mask,
             orig_x,
